@@ -3,7 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { Text, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { Player, Room, Task } from '../types';
-import { ROOMS, VENTS, NAV_NODES } from '../constants';
+import { ROOMS, VENTS } from '../constants';
 
 export const PlayerModel: React.FC<{ player: Player; isMe: boolean }> = ({ player, isMe }) => {
   const meshRef = useRef<THREE.Group>(null);
@@ -62,7 +62,7 @@ export const PlayerModel: React.FC<{ player: Player; isMe: boolean }> = ({ playe
 };
 
 export const MapModel: React.FC = () => {
-    const floorGeo = useMemo(() => new THREE.PlaneGeometry(1, 1), []);
+    useMemo(() => new THREE.PlaneGeometry(1, 1), []);
     
     return (
         <group>
@@ -136,31 +136,56 @@ export const MapModel: React.FC = () => {
 export const TaskMarker: React.FC<{ task: Task }> = ({ task }) => {
     const { camera } = useThree();
     const [nearby, setNearby] = useState(false);
+    const arrowRef = useRef<THREE.Mesh>(null);
     
-    useFrame(() => {
+    useFrame((state) => {
         // Simple distance check to camera
         const d = camera.position.distanceTo(new THREE.Vector3(task.position.x, task.position.y, task.position.z));
         if (d < 5 && !nearby) setNearby(true);
         if (d >= 5 && nearby) setNearby(false);
+
+        // Animate Arrow
+        if (nearby && arrowRef.current) {
+            arrowRef.current.position.y = 2 + Math.sin(state.clock.elapsedTime * 4) * 0.3;
+            arrowRef.current.rotation.y += 0.02;
+        }
     });
 
     if (task.completed) return null;
     
     return (
-        <group position={[task.position.x, 1, task.position.z]}>
-            <mesh>
-                <boxGeometry args={[0.5, 0.5, 0.5]} />
-                <meshStandardMaterial color="#F9E076" emissive="#F9E076" emissiveIntensity={0.5} />
+        <group position={[task.position.x, 0, task.position.z]}>
+            {/* Task Console Base */}
+            <mesh position={[0, 0.5, 0]}>
+                <boxGeometry args={[0.8, 1, 0.8]} />
+                <meshStandardMaterial color="#444" />
             </mesh>
-            <pointLight distance={3} intensity={2} color="#F9E076" />
+            <mesh position={[0, 1, 0]}>
+                <boxGeometry args={[0.6, 0.1, 0.6]} />
+                <meshStandardMaterial color="#F9E076" emissive="#F9E076" emissiveIntensity={0.2} />
+            </mesh>
+
+            {/* Glowing Light */}
+            <pointLight position={[0, 1.2, 0]} distance={4} intensity={nearby ? 3 : 1} color="#F9E076" />
             
-            {/* Visual Indicator that appears when nearby */}
+            {/* 3D Arrow Indicator (Only when nearby) */}
             {nearby && (
-                <Html position={[0, 1, 0]} center>
-                    <div className="text-yellow-400 font-bold text-2xl animate-bounce drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">
-                        !
-                    </div>
-                </Html>
+                <>
+                    <mesh ref={arrowRef} position={[0, 2, 0]}>
+                        <coneGeometry args={[0.3, 0.6, 4]} />
+                        <meshStandardMaterial color="#F9E076" emissive="#F9E076" emissiveIntensity={0.8} />
+                        <mesh position={[0, 0.3, 0]} rotation={[Math.PI, 0, 0]}>
+                             {/* Outline effect (simple wireframe or just color contrast) handled by emissive */}
+                        </mesh>
+                    </mesh>
+                    
+                    {/* HTML Overlay as backup/emphasis */}
+                    <Html position={[0, 2.5, 0]} center distanceFactor={15}>
+                        <div className="text-yellow-400 font-bold text-lg drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] whitespace-nowrap">
+                            Task
+                        </div>
+                    </Html>
+                </>
             )}
         </group>
     );

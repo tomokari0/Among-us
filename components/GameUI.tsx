@@ -1,5 +1,6 @@
 import React from 'react';
 import { GameState, GamePhase, Role, Player } from '../types';
+import { ROOMS } from '../constants';
 
 interface UIProps {
   gameState: GameState;
@@ -9,13 +10,15 @@ interface UIProps {
   onVote: (id: string | null) => void;
   onStart: () => void;
   onRestart: () => void;
+  showMap: boolean;
   timeRemaining?: number;
 }
 
 export const GameUI: React.FC<UIProps> = ({ 
-  gameState, killCooldown, nearbyTarget, nearbyTask, onVote, onStart, onRestart, timeRemaining 
+  gameState, killCooldown, nearbyTarget, nearbyTask, onVote, onStart, onRestart, showMap, timeRemaining 
 }) => {
   const me = gameState.players.find(p => p.id === gameState.myPlayerId);
+  const myTasks = gameState.tasks[gameState.myPlayerId] || [];
 
   if (gameState.phase === GamePhase.LOBBY) {
     return (
@@ -85,15 +88,16 @@ export const GameUI: React.FC<UIProps> = ({
 
   return (
     <div className="absolute inset-0 pointer-events-none">
-      {/* Role Reveal (Fade out handled by logic usually, keeping simple here) */}
-      <div className="absolute top-4 left-4 text-2xl font-bold drop-shadow-md">
+      {/* Role Reveal */}
+      <div className="absolute top-4 left-4 text-2xl font-bold drop-shadow-md z-30">
         <span className={me?.role === Role.IMPOSTOR ? 'text-red-500' : 'text-blue-400'}>
           {me?.role.toUpperCase()}
         </span>
+        <div className="text-xs text-white opacity-70">Press M for Map</div>
       </div>
 
       {/* Task Bar */}
-      <div className="absolute top-4 left-0 right-0 flex justify-center">
+      <div className="absolute top-4 left-0 right-0 flex justify-center z-30">
         <div className="w-1/2 bg-gray-700 h-6 border-2 border-gray-500 rounded-full overflow-hidden">
             <div 
                 className="h-full bg-green-500 transition-all duration-500" 
@@ -102,8 +106,71 @@ export const GameUI: React.FC<UIProps> = ({
         </div>
       </div>
 
+      {/* Map Overlay */}
+      {showMap && (
+        <div className="absolute inset-0 bg-black/80 z-20 flex items-center justify-center">
+           <div className="relative w-[600px] h-[400px] bg-gray-900 border-4 border-gray-600 rounded-lg p-4 shadow-2xl overflow-hidden">
+               <h3 className="absolute top-2 left-4 text-white font-bold text-xl z-10">MAP</h3>
+               
+               {/* Map Rendering Container - Scale coordinate system to fit */}
+               {/* Map Bounds approx: X: -30 to 30, Z: -10 to 20 */}
+               {/* 60x30 units -> 600x300 pixels. Scale ~ 10 */}
+               <div className="absolute top-1/2 left-1/2 w-full h-full transform -translate-x-1/2 -translate-y-1/2">
+                  
+                  {/* Render Rooms */}
+                  {ROOMS.map(room => (
+                      <div 
+                        key={room.id}
+                        className="absolute bg-gray-600 border border-gray-400 opacity-60"
+                        style={{
+                            left: `${(room.x + 30) * 10}px`, // Offset to center horizontally
+                            top: `${(room.z + 10) * 10}px`, // Offset to center vertically
+                            width: `${room.width * 10}px`,
+                            height: `${room.depth * 10}px`,
+                            transform: 'translate(-50%, -50%)' // Center anchor
+                        }}
+                      >
+                          <span className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-[8px] text-white opacity-80 whitespace-nowrap">
+                              {room.name}
+                          </span>
+                      </div>
+                  ))}
+
+                  {/* Render Tasks */}
+                  {myTasks.map(task => !task.completed && (
+                      <div
+                        key={task.id}
+                        className="absolute w-4 h-4 bg-yellow-400 rounded-full animate-pulse border-2 border-white shadow-lg"
+                        style={{
+                            left: `${(task.position.x + 30) * 10}px`,
+                            top: `${(task.position.z + 10) * 10}px`,
+                            transform: 'translate(-50%, -50%)'
+                        }}
+                      >
+                          <span className="absolute -top-4 left-1/2 transform -translate-x-1/2 text-[10px] font-bold text-yellow-400">!</span>
+                      </div>
+                  ))}
+
+                  {/* Render Player */}
+                  {me && (
+                      <div
+                        className="absolute w-5 h-5 bg-red-600 border-2 border-white rounded-full z-10"
+                        style={{
+                            left: `${(me.position.x + 30) * 10}px`,
+                            top: `${(me.position.z + 10) * 10}px`,
+                            transform: 'translate(-50%, -50%)'
+                        }}
+                      ></div>
+                  )}
+
+               </div>
+           </div>
+           <div className="absolute bottom-10 text-white font-mono">Press M to close</div>
+        </div>
+      )}
+
       {/* Interaction Prompts */}
-      <div className="absolute bottom-20 left-0 right-0 flex justify-center gap-4">
+      <div className="absolute bottom-20 left-0 right-0 flex justify-center gap-4 z-30">
           {nearbyTask && !nearbyTask.completed && me?.role === Role.CREWMATE && (
               <div className="bg-yellow-500 text-black font-bold px-4 py-2 rounded animate-bounce">
                   PRESS E TO {nearbyTask.type}
@@ -116,9 +183,9 @@ export const GameUI: React.FC<UIProps> = ({
           )}
       </div>
 
-      {/* Action Buttons (Visual only, controls are KB) */}
+      {/* Action Buttons */}
       {me?.role === Role.IMPOSTOR && (
-          <div className="absolute bottom-4 right-4 flex flex-col items-center">
+          <div className="absolute bottom-4 right-4 flex flex-col items-center z-30">
               <div className={`w-20 h-20 rounded-full border-4 flex items-center justify-center mb-2 ${killCooldown > 0 ? 'border-gray-500 bg-gray-800' : 'border-red-500 bg-red-900'}`}>
                   {killCooldown > 0 ? (
                       <span className="text-2xl font-mono font-bold text-gray-300">{Math.ceil(killCooldown)}</span>
@@ -130,7 +197,7 @@ export const GameUI: React.FC<UIProps> = ({
           </div>
       )}
       
-       <div className="absolute bottom-4 right-28 flex flex-col items-center">
+       <div className="absolute bottom-4 right-28 flex flex-col items-center z-30">
           <div className="w-16 h-16 rounded-full border-4 border-white bg-gray-800 flex items-center justify-center mb-2">
               <span className="text-sm font-bold">REPORT</span>
           </div>

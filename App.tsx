@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { PointerLockControls, Stars } from '@react-three/drei';
 import * as THREE from 'three';
@@ -6,7 +6,7 @@ import { useGameEngine } from './hooks/useGameEngine';
 import { PlayerModel, MapModel, TaskMarker } from './components/GameModels';
 import { GameUI } from './components/GameUI';
 import { PLAYER_SPEED } from './constants';
-import { Vector3 } from './types';
+import { Vector3, Task } from './types';
 
 // Keyboard Input Hook
 const usePlayerControls = () => {
@@ -32,8 +32,9 @@ const usePlayerControls = () => {
 
 // Scene Controller
 const GameScene: React.FC<{ 
-    engine: ReturnType<typeof useGameEngine> 
-}> = ({ engine }) => {
+    engine: ReturnType<typeof useGameEngine>;
+    myTasks: Task[];
+}> = ({ engine, myTasks }) => {
     const { camera } = useThree();
     const keys = usePlayerControls();
     const lastActionTime = useRef(0);
@@ -69,17 +70,8 @@ const GameScene: React.FC<{
 
         // Camera follow
         const pPos = new THREE.Vector3(myPlayer.position.x, myPlayer.position.y, myPlayer.position.z);
-        // We let pointerlockcontrols handle rotation, we just need to adhere position
-        // Ideally: Camera is attached to a rig.
-        // Quick hack for PointerLock + 3rd Person:
-        // Actually PointerLock is usually 1st person. 
-        // For 3rd person: Set camera position behind player based on angles.
-        // But prompt says "Mouse controls camera rotation".
-        // Let's stick to a quasi-1st person / close 3rd person for simplicity with PointerLock.
-        // We'll position camera slightly above and behind player but locked to player pos.
         
-        // Actually, to make it playable and simple:
-        // 1st person view is easiest to implement bug-free with PointerLockControls.
+        // 1st/3rd Person Hybrid
         camera.position.x = pPos.x;
         camera.position.y = pPos.y + 1.6; // Eye height
         camera.position.z = pPos.z;
@@ -109,7 +101,8 @@ const GameScene: React.FC<{
                 />
             ))}
 
-            {Object.values(engine.gameState.tasks).flat().map(t => (
+            {/* Render ONLY my tasks */}
+            {myTasks.map(t => (
                  !t.completed && <TaskMarker key={t.id} task={t} />
             ))}
 
@@ -121,11 +114,28 @@ const GameScene: React.FC<{
 
 const App: React.FC = () => {
   const engine = useGameEngine();
+  const [showMap, setShowMap] = useState(false);
+
+  // Map Toggle
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key.toLowerCase() === 'm') {
+            setShowMap(prev => !prev);
+        }
+        if (e.key === 'Tab') {
+            e.preventDefault(); // Prevent tab navigation
+            // Could toggle scoreboard/map
+        }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Meeting Timer Effect
   useEffect(() => {
     let interval: any;
     if (engine.gameState.phase === 'MEETING') {
+        setShowMap(false); // Close map on meeting
         interval = setInterval(() => {
             engine.setGameState(prev => {
                 if (prev.meetingTimer <= 0) {
@@ -139,10 +149,12 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [engine.gameState.phase, engine.gameState.meetingTimer]);
 
+  const myTasks = engine.gameState.tasks[engine.gameState.myPlayerId] || [];
+
   return (
     <div className="w-full h-full relative bg-black">
         <Canvas camera={{ fov: 75, near: 0.1, far: 100, position: [0, 5, 10] }}>
-            <GameScene engine={engine} />
+            <GameScene engine={engine} myTasks={myTasks} />
         </Canvas>
         
         <GameUI 
@@ -153,6 +165,7 @@ const App: React.FC = () => {
             onVote={(id) => engine.castVote(engine.gameState.myPlayerId, id)}
             onStart={engine.startGame}
             onRestart={engine.startGame}
+            showMap={showMap}
         />
     </div>
   );

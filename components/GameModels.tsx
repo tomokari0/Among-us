@@ -1,5 +1,5 @@
-import React, { useRef, useMemo } from 'react';
-import { useFrame } from '@react-three/fiber';
+import React, { useRef, useMemo, useState } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
 import { Text, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { Player, Room, Task } from '../types';
@@ -134,7 +134,18 @@ export const MapModel: React.FC = () => {
 };
 
 export const TaskMarker: React.FC<{ task: Task }> = ({ task }) => {
+    const { camera } = useThree();
+    const [nearby, setNearby] = useState(false);
+    
+    useFrame(() => {
+        // Simple distance check to camera
+        const d = camera.position.distanceTo(new THREE.Vector3(task.position.x, task.position.y, task.position.z));
+        if (d < 5 && !nearby) setNearby(true);
+        if (d >= 5 && nearby) setNearby(false);
+    });
+
     if (task.completed) return null;
+    
     return (
         <group position={[task.position.x, 1, task.position.z]}>
             <mesh>
@@ -142,6 +153,15 @@ export const TaskMarker: React.FC<{ task: Task }> = ({ task }) => {
                 <meshStandardMaterial color="#F9E076" emissive="#F9E076" emissiveIntensity={0.5} />
             </mesh>
             <pointLight distance={3} intensity={2} color="#F9E076" />
+            
+            {/* Visual Indicator that appears when nearby */}
+            {nearby && (
+                <Html position={[0, 1, 0]} center>
+                    <div className="text-yellow-400 font-bold text-2xl animate-bounce drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">
+                        !
+                    </div>
+                </Html>
+            )}
         </group>
     );
 };

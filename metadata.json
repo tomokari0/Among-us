@@ -1,0 +1,5 @@
+{
+  "name": "Among Us 3D Web",
+  "description": "A fully playable 3D social deduction game running in the browser using React, Three.js, and Tailwind CSS. Features single-player vs AI, procedurally generated spaceship map, tasks, sabotages, and emergency meetings.",
+  "requestFramePermissions": []
+}

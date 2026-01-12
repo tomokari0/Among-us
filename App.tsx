@@ -1,0 +1,161 @@
+import React, { useEffect, useRef } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { PointerLockControls, Stars } from '@react-three/drei';
+import * as THREE from 'three';
+import { useGameEngine } from './hooks/useGameEngine';
+import { PlayerModel, MapModel, TaskMarker } from './components/GameModels';
+import { GameUI } from './components/GameUI';
+import { PLAYER_SPEED } from './constants';
+import { Vector3 } from './types';
+
+// Keyboard Input Hook
+const usePlayerControls = () => {
+  const keys = useRef({ w: false, a: false, s: false, d: false, e: false, r: false, k: false, m: false });
+  useEffect(() => {
+    const handleDown = (e: KeyboardEvent) => {
+       const k = e.key.toLowerCase();
+       if (k in keys.current) keys.current[k as keyof typeof keys.current] = true;
+    };
+    const handleUp = (e: KeyboardEvent) => {
+       const k = e.key.toLowerCase();
+       if (k in keys.current) keys.current[k as keyof typeof keys.current] = false;
+    };
+    window.addEventListener('keydown', handleDown);
+    window.addEventListener('keyup', handleUp);
+    return () => {
+        window.removeEventListener('keydown', handleDown);
+        window.removeEventListener('keyup', handleUp);
+    };
+  }, []);
+  return keys;
+};
+
+// Scene Controller
+const GameScene: React.FC<{ 
+    engine: ReturnType<typeof useGameEngine> 
+}> = ({ engine }) => {
+    const { camera } = useThree();
+    const keys = usePlayerControls();
+    const lastActionTime = useRef(0);
+    
+    // Update Loop
+    useFrame((state, delta) => {
+        engine.gameTick(delta);
+
+        if (engine.gameState.phase !== 'PLAYING') return;
+
+        const myPlayer = engine.gameState.players.find(p => p.id === engine.gameState.myPlayerId);
+        if (!myPlayer || myPlayer.isDead) return; // Spectator mode todo
+
+        // Player Movement
+        // Camera direction
+        const front = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        front.y = 0;
+        front.normalize();
+        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+        right.y = 0;
+        right.normalize();
+
+        const moveVec = new THREE.Vector3();
+        if (keys.current.w) moveVec.add(front);
+        if (keys.current.s) moveVec.sub(front);
+        if (keys.current.d) moveVec.add(right);
+        if (keys.current.a) moveVec.sub(right);
+
+        if (moveVec.length() > 0) {
+             moveVec.normalize().multiplyScalar(PLAYER_SPEED);
+             engine.movePlayer(myPlayer.id, { x: moveVec.x, y: 0, z: moveVec.z }, delta);
+        }
+
+        // Camera follow
+        const pPos = new THREE.Vector3(myPlayer.position.x, myPlayer.position.y, myPlayer.position.z);
+        // We let pointerlockcontrols handle rotation, we just need to adhere position
+        // Ideally: Camera is attached to a rig.
+        // Quick hack for PointerLock + 3rd Person:
+        // Actually PointerLock is usually 1st person. 
+        // For 3rd person: Set camera position behind player based on angles.
+        // But prompt says "Mouse controls camera rotation".
+        // Let's stick to a quasi-1st person / close 3rd person for simplicity with PointerLock.
+        // We'll position camera slightly above and behind player but locked to player pos.
+        
+        // Actually, to make it playable and simple:
+        // 1st person view is easiest to implement bug-free with PointerLockControls.
+        camera.position.x = pPos.x;
+        camera.position.y = pPos.y + 1.6; // Eye height
+        camera.position.z = pPos.z;
+
+        // Actions
+        const now = state.clock.elapsedTime;
+        if (now - lastActionTime.current > 0.5) {
+            if (keys.current.k) { engine.performAction('KILL'); lastActionTime.current = now; }
+            if (keys.current.r) { engine.performAction('REPORT'); lastActionTime.current = now; }
+            if (keys.current.e) { engine.performAction('USE'); lastActionTime.current = now; }
+        }
+    });
+
+    return (
+        <>
+            <ambientLight intensity={0.3} />
+            <pointLight position={[0, 10, 0]} intensity={0.5} />
+            <Stars />
+            
+            <MapModel />
+            
+            {engine.gameState.players.map(p => (
+                <PlayerModel 
+                    key={p.id} 
+                    player={p} 
+                    isMe={p.id === engine.gameState.myPlayerId} 
+                />
+            ))}
+
+            {Object.values(engine.gameState.tasks).flat().map(t => (
+                 !t.completed && <TaskMarker key={t.id} task={t} />
+            ))}
+
+            {/* Only enable controls if playing */}
+            {engine.gameState.phase === 'PLAYING' && <PointerLockControls />}
+        </>
+    );
+};
+
+const App: React.FC = () => {
+  const engine = useGameEngine();
+
+  // Meeting Timer Effect
+  useEffect(() => {
+    let interval: any;
+    if (engine.gameState.phase === 'MEETING') {
+        interval = setInterval(() => {
+            engine.setGameState(prev => {
+                if (prev.meetingTimer <= 0) {
+                    engine.resolveMeeting();
+                    return prev;
+                }
+                return { ...prev, meetingTimer: prev.meetingTimer - 1 };
+            });
+        }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [engine.gameState.phase, engine.gameState.meetingTimer]);
+
+  return (
+    <div className="w-full h-full relative bg-black">
+        <Canvas camera={{ fov: 75, near: 0.1, far: 100, position: [0, 5, 10] }}>
+            <GameScene engine={engine} />
+        </Canvas>
+        
+        <GameUI 
+            gameState={engine.gameState}
+            killCooldown={engine.killCooldown}
+            nearbyTarget={engine.nearbyTarget}
+            nearbyTask={engine.nearbyTask}
+            onVote={(id) => engine.castVote(engine.gameState.myPlayerId, id)}
+            onStart={engine.startGame}
+            onRestart={engine.startGame}
+        />
+    </div>
+  );
+};
+
+export default App;
